@@ -35,71 +35,69 @@ export class BadgesService {
     const search = (this.request.query.search as string) || "";
 
     const qb = this.badgesRepository
-      .createQueryBuilder('badge')
-      .leftJoin('badge.issuer', 'issuer')
+      .createQueryBuilder("badge")
+      .leftJoin("badge.issuer", "issuer")
       .select([
-        'badge.id',
-        'badge.nombre',
-        'badge.ruta_imagen',
-        'badge.estado',
-        'issuer.id', 
-        'issuer.razon_social',  
+        "badge.id",
+        "badge.nombre",
+        "badge.ruta_imagen",
+        "badge.estado",
+        "issuer.id",
+        "issuer.razon_social",
       ]);
 
-      if (search) {
-        const term = `%${search}%`;
-        qb.where(
-          `
+    if (search) {
+      const term = `%${search}%`;
+      qb.where(
+        `
             lower(unaccent(badge.nombre))     LIKE lower(unaccent(:term))
             OR
             lower(unaccent(issuer.razon_social)) LIKE lower(unaccent(:term))
           `,
-          { term },
-        );
-      }
+        { term },
+      );
+    }
     qb.skip((page - 1) * limit).take(limit);
     const [items, total] = await qb.getManyAndCount();
     return { items, total };
   }
 
-async findByOrganizacion(
-  organizacionId: string,
-): Promise<{ items: Badge[]; total: number }> {
-  const page   = parseInt(this.request.query.page  as string, 10) || 1;
-  const limit  = parseInt(this.request.query.limit as string, 10) || 20;
-  const search = (this.request.query.search as string)      || '';
+  async findByOrganizacion(
+    organizacionId: string,
+  ): Promise<{ items: Badge[]; total: number }> {
+    const page = parseInt(this.request.query.page as string, 10) || 1;
+    const limit = parseInt(this.request.query.limit as string, 10) || 20;
+    const search = (this.request.query.search as string) || "";
 
-  const qb = this.badgesRepository
-    .createQueryBuilder('badge')
-    .leftJoin('badge.issuer', 'issuer')
-    .select([
-      'badge.id',
-      'badge.nombre',
-      'badge.ruta_imagen',
-      'badge.estado',
-      'issuer.id',
-      'issuer.razon_social',
-    ])
-    .where('issuer.id = :organizacionId', { organizacionId });
+    const qb = this.badgesRepository
+      .createQueryBuilder("badge")
+      .leftJoin("badge.issuer", "issuer")
+      .select([
+        "badge.id",
+        "badge.nombre",
+        "badge.ruta_imagen",
+        "badge.estado",
+        "issuer.id",
+        "issuer.razon_social",
+      ])
+      .where("issuer.id = :organizacionId", { organizacionId });
 
-  if (search) {
-    const term = `%${search}%`;
-    qb.andWhere(
-      `
+    if (search) {
+      const term = `%${search}%`;
+      qb.andWhere(
+        `
         lower(unaccent(badge.nombre))           LIKE lower(unaccent(:term))
         OR lower(unaccent(issuer.razon_social)) LIKE lower(unaccent(:term))
       `,
-      { term },
-    );
+        { term },
+      );
+    }
+
+    qb.skip((page - 1) * limit).take(limit);
+    const [items, total] = await qb.getManyAndCount();
+
+    return { items, total };
   }
-
-  qb.skip((page - 1) * limit).take(limit);
-  const [items, total] = await qb.getManyAndCount();
-
-  return { items, total };
-}
-
-
 
   //  Obtener todos los badges junto con las certificaciones (para vista pública)
   async findAllWithCertifications(): Promise<Badge[]> {
@@ -239,5 +237,46 @@ async findByOrganizacion(
     const badge = await this.findOne(id);
     await this.badgesRepository.remove(badge);
     this.logger.log(`Badge con ID ${id} eliminado correctamente.`);
+  }
+
+  async getBadgeOpenBadgeFormat(id: string) {
+    const cleanId = id.replace(".json", ""); // ✅ elimina la extensión
+    const badge = await this.badgesRepository.findOne({
+      where: { id: cleanId },
+      relations: [
+        "criterios",
+        "habilidades",
+        "habilidades.habilidad",
+        "issuer",
+      ],
+    });
+
+    if (!badge) {
+      throw new NotFoundException("Badge no encontrado");
+    }
+
+    const criterios = badge.criterios?.map((c) => c.descripcion) || [];
+
+    const habilidades =
+      badge.habilidades?.map((h) => ({
+        id: h.habilidad.id,
+        name: h.habilidad.nombre,
+      })) || [];
+
+    return {
+      "@context": "https://w3id.org/openbadges/v2",
+      type: "BadgeClass",
+      id: `https://api.certif.digital/badges/openbadge/${badge.id}`,
+      name: badge.nombre,
+      description: badge.descripcion,
+      image:
+        badge.ruta_imagen || "https://api.certif.digital/default-badge.png",
+      criteria: {
+        narrative: "Criterios de obtención del badge.",
+        detalles: criterios,
+      },
+      skill: habilidades,
+      issuer: `https://api.certif.digital/organizaciones/${badge.issuer.id}`,
+    };
   }
 }

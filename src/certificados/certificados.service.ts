@@ -151,6 +151,53 @@ export class CertificadosService {
     };
   }
 
+  async getAssertionJson(id: string) {
+    const certificado = await this.certificadoRepository.findOne({
+      where: { id },
+      relations: [
+        "badge",
+        "badge.criterios",
+        "badge.habilidades",
+        "badge.habilidades.habilidad",
+        "badge.issuer",
+      ],
+    });
+
+    if (!certificado) {
+      throw new NotFoundException("Certificado no encontrado");
+    }
+
+    let recipientData: { email: string; nombre: string };
+    try {
+      recipientData =
+        typeof certificado.recipient === "string"
+          ? JSON.parse(certificado.recipient)
+          : certificado.recipient;
+    } catch (error) {
+      throw new NotFoundException("Error al procesar los datos del recipient");
+    }
+
+    const assertion = {
+      "@context": "https://w3id.org/openbadges/v2",
+      type: "Assertion",
+      id: `https://api.certif.digital/certificados/assertions/${certificado.id}`,
+      recipient: {
+        type: "email",
+        hashed: false,
+        identity: recipientData.email,
+      },
+      badge: `https://api.certif.digital/badges/${certificado.badge.id}.json`,
+      issuedOn: new Date(certificado.fecha_emision).toISOString(),
+
+      verification: {
+        type: "HostedBadge",
+      },
+      issuer: `https://api.certif.digital/organizaciones/${certificado.badge.issuer.id}`,
+    };
+
+    return assertion;
+  }
+
   async generarCertificadoPDF(certificado: Certificado): Promise<Buffer> {
     if (!certificado)
       throw new NotFoundException(
@@ -421,35 +468,43 @@ export class CertificadosService {
       fecha_expiracion,
     } = createCertificadoDto;
     const queryRunner = this.dataSource.createQueryRunner();
-  
+
     await queryRunner.connect();
     await queryRunner.startTransaction();
-  
+
     try {
-      this.logger.log(`Iniciando emisión de certificado para: ${propietario.email}`);
-  
+      this.logger.log(
+        `Iniciando emisión de certificado para: ${propietario.email}`,
+      );
+
       const frontendUrl = this.configService.get<string>("FRONTEND_URL");
-      const backendUrl = this.configService.get<string>("BACKEND_URL") || "http://localhost:3000";
-  
+      const backendUrl =
+        this.configService.get<string>("BACKEND_URL") ||
+        "http://localhost:3000";
+
       let usuario = await queryRunner.manager.findOne(Usuario, {
         where: [{ dni: propietario.dni }, { email: propietario.email }],
         relations: ["organizacion"],
       });
-  
+
       let organizacion = null;
       if (propietario.organizacion_id) {
         organizacion = await queryRunner.manager.findOne(Organizacion, {
           where: { id: propietario.organizacion_id },
         });
         if (!organizacion) {
-          this.logger.warn(`Organización con ID "${propietario.organizacion_id}" no encontrada.`);
-          throw new NotFoundException(`Organización con ID "${propietario.organizacion_id}" no encontrada.`);
+          this.logger.warn(
+            `Organización con ID "${propietario.organizacion_id}" no encontrada.`,
+          );
+          throw new NotFoundException(
+            `Organización con ID "${propietario.organizacion_id}" no encontrada.`,
+          );
         }
       }
-  
+
       let esNuevoUsuario = false;
       let resetToken = null;
-  
+
       if (!usuario) {
         esNuevoUsuario = true;
         resetToken = crypto.randomBytes(32).toString("hex");
@@ -460,22 +515,32 @@ export class CertificadosService {
         });
         usuario = await queryRunner.manager.save(Usuario, usuario);
         if (organizacion) {
-          await queryRunner.manager.createQueryBuilder().relation(Usuario, "organizaciones").of(usuario.id).add(organizacion.id);
+          await queryRunner.manager
+            .createQueryBuilder()
+            .relation(Usuario, "organizaciones")
+            .of(usuario.id)
+            .add(organizacion.id);
         }
       } else if (!usuario.organizacion && organizacion) {
         usuario.organizacion = organizacion;
         await queryRunner.manager.save(Usuario, usuario);
-        await queryRunner.manager.createQueryBuilder().relation(Usuario, "organizaciones").of(usuario.id).add(organizacion.id);
+        await queryRunner.manager
+          .createQueryBuilder()
+          .relation(Usuario, "organizaciones")
+          .of(usuario.id)
+          .add(organizacion.id);
       }
-  
+
       const badge = await queryRunner.manager.findOne(Badge, {
         where: { id: badge_id },
       });
       if (!badge) {
         this.logger.warn(`Badge con ID "${badge_id}" no encontrado.`);
-        throw new NotFoundException(`Badge con ID "${badge_id}" no encontrado.`);
+        throw new NotFoundException(
+          `Badge con ID "${badge_id}" no encontrado.`,
+        );
       }
-  
+
       let plantilla = null;
       if (plantilla_certificado_id) {
         plantilla = await queryRunner.manager.findOne(PlantillaCertificado, {
@@ -486,12 +551,16 @@ export class CertificadosService {
           where: { badge: { id: badge_id }, es_predeterminada: true },
         });
       }
-  
+
       if (!plantilla) {
-        this.logger.warn(`No se encontró una plantilla predeterminada para el badge con ID "${badge_id}".`);
-        throw new NotFoundException(`No se encontró una plantilla predeterminada para el badge con ID "${badge_id}".`);
+        this.logger.warn(
+          `No se encontró una plantilla predeterminada para el badge con ID "${badge_id}".`,
+        );
+        throw new NotFoundException(
+          `No se encontró una plantilla predeterminada para el badge con ID "${badge_id}".`,
+        );
       }
-  
+
       const certificado = queryRunner.manager.create(Certificado, {
         propietario: usuario,
         badge,
@@ -504,39 +573,53 @@ export class CertificadosService {
           email: propietario.email,
         },
       });
-  
-      const certificadoGuardado = await queryRunner.manager.save(Certificado, certificado);
-  
+
+      const certificadoGuardado = await queryRunner.manager.save(
+        Certificado,
+        certificado,
+      );
+
       try {
         const nombreImagenOriginal = badge.ruta_imagen.split("/").pop();
-        const rutaImagenOriginal = path.join(process.cwd(), "uploads", nombreImagenOriginal);
+        const rutaImagenOriginal = path.join(
+          process.cwd(),
+          "uploads",
+          nombreImagenOriginal,
+        );
         const nombreImagenFinal = `badge-final-${certificadoGuardado.id}.png`;
-        const rutaImagenFinal = path.join(process.cwd(), "uploads", nombreImagenFinal);
-  
+        const rutaImagenFinal = path.join(
+          process.cwd(),
+          "uploads",
+          nombreImagenFinal,
+        );
+
         const assertion = {
           "@context": "https://w3id.org/openbadges/v2",
           type: "Assertion",
-          id: `https://api.certif.digital/assertions/${certificadoGuardado.id}`,
+          id: `https://api.certif.digital/certificados/assertions/${certificadoGuardado.id}`,
           recipient: {
             type: "email",
             hashed: false,
             identity: usuario.email,
           },
-          badge: `https://api.certif.digital/badges/${badge.id}.json`,
+          badge: `https://api.certif.digital/badges/openbadge/${badge.id}.json`,
           issuedOn: certificadoGuardado.fecha_emision.toISOString(),
           verification: { type: "HostedBadge" },
           issuer: `https://api.certif.digital/organizaciones/${usuario.organizacion?.id || "default"}`,
         };
-  
+
         const bufferOriginal = fs.readFileSync(rutaImagenOriginal);
         const chunks = extractChunks(bufferOriginal);
-        const textChunk = createTextChunk("openbadge", JSON.stringify(assertion));
+        const textChunk = createTextChunk(
+          "openbadge",
+          JSON.stringify(assertion),
+        );
         chunks.splice(chunks.length - 1, 0, textChunk);
         const bufferFinal = Buffer.from(encodeChunks(chunks));
         fs.writeFileSync(rutaImagenFinal, bufferFinal);
-  
+
         certificadoGuardado.ruta_insignia = `${backendUrl}/uploads/${nombreImagenFinal}`;
-  
+
         certificadoGuardado.metadata = {
           usuario: {
             id: usuario.id,
@@ -557,27 +640,42 @@ export class CertificadosService {
             ruta_fondo: plantilla.ruta_fondo,
           },
         };
-  
+
         await queryRunner.manager.save(Certificado, certificadoGuardado);
       } catch (err) {
         this.logger.error(`Error al bakear la imagen: ${err.message}`);
       }
-  
-      this.logger.log(`Certificado emitido con éxito: ${certificadoGuardado.id} para ${usuario.email}`);
-  
+
+      this.logger.log(
+        `Certificado emitido con éxito: ${certificadoGuardado.id} para ${usuario.email}`,
+      );
+
       const nombreCompleto = `${usuario.nombre} ${usuario.apellido}`;
       const email = usuario.email;
       const linkCertificado = `${frontendUrl}/beneficiario/certificado/${certificadoGuardado.id}`;
-      const linkRestablecer = resetToken ? `${frontendUrl}/recuperar/${resetToken}` : null;
-  
+      const linkRestablecer = resetToken
+        ? `${frontendUrl}/recuperar/${resetToken}`
+        : null;
+
       if (esNuevoUsuario) {
         const bienvenida = bienvenidaTemplate(nombreCompleto, linkRestablecer);
-        await this.mailService.sendMail(email, bienvenida.subject, bienvenida.text);
+        await this.mailService.sendMail(
+          email,
+          bienvenida.subject,
+          bienvenida.text,
+        );
       }
-  
-      const certificadoEmail = certificadoTemplate(nombreCompleto, linkCertificado);
-      await this.mailService.sendMail(email, certificadoEmail.subject, certificadoEmail.text);
-  
+
+      const certificadoEmail = certificadoTemplate(
+        nombreCompleto,
+        linkCertificado,
+      );
+      await this.mailService.sendMail(
+        email,
+        certificadoEmail.subject,
+        certificadoEmail.text,
+      );
+
       await queryRunner.commitTransaction();
       return certificadoGuardado;
     } catch (error) {
@@ -587,7 +685,7 @@ export class CertificadosService {
     } finally {
       await queryRunner.release();
     }
-  }  
+  }
 
   async listarCertificadosSimples(
     badgeId?: string,

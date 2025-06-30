@@ -89,4 +89,13 @@ export class BadgesController {
   async delete(@Param('id') id: string): Promise<void> {
     return this.badgesService.delete(id);
   }
+
+  @Get('openbadge/:id')
+@ApiOperation({ summary: 'Obtener badge JSON OpenBadge por ID' })
+@ApiResponse({ status: 200, description: 'Badge OpenBadge generado con éxito.' })
+@ApiResponse({ status: 404, description: 'Badge no encontrado.' })
+async getBadgeOpenBadgeFormat(@Param('id') id: string) {
+  return this.badgesService.getBadgeOpenBadgeFormat(id);
+}
+
 }
