@@ -85,10 +85,10 @@ export class BadgesService {
     if (search) {
       const term = `%${search}%`;
       qb.andWhere(
-        `
+        `(
         lower(unaccent(badge.nombre))           LIKE lower(unaccent(:term))
         OR lower(unaccent(issuer.razon_social)) LIKE lower(unaccent(:term))
-      `,
+      )`,
         { term },
       );
     }

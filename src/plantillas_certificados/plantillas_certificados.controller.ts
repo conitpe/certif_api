@@ -102,4 +102,5 @@ async listarSimple() {
   async delete(@Param('id') id: string): Promise<void> {
     return this.plantillasService.delete(id);
   }
+  
 }

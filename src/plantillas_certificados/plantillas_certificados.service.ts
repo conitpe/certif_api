@@ -75,10 +75,10 @@ export class PlantillasCertificadosService {
 
     if (search) {
       qb.andWhere(
-        `
+        `(
           lower(unaccent(plantilla.titulo)) LIKE lower(unaccent(:term))
           OR lower(unaccent(badge.nombre))    LIKE lower(unaccent(:term))
-        `,
+         )`,
         { term },
       );
     }
@@ -204,4 +204,6 @@ export class PlantillasCertificadosService {
     await this.plantillasRepository.remove(plantilla);
     this.logger.log(`Plantilla con ID ${id} eliminada correctamente.`);
   }
+
+  
 }

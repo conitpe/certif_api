@@ -1,4 +1,11 @@
-import { Injectable, NotFoundException, Inject } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  Inject,
+  BadRequestException,
+  HttpException,
+  InternalServerErrorException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
@@ -556,6 +563,7 @@ export class CertificadosService {
         this.logger.warn(
           `No se encontró una plantilla predeterminada para el badge con ID "${badge_id}".`,
         );
+        throw new BadRequestException("plantilla predeterminada");
         throw new NotFoundException(
           `No se encontró una plantilla predeterminada para el badge con ID "${badge_id}".`,
         );
@@ -681,7 +689,10 @@ export class CertificadosService {
     } catch (error) {
       await queryRunner.rollbackTransaction();
       this.logger.error(`Error al emitir el certificado: ${error.message}`);
-      throw new Error("Error al emitir el certificado: " + error.message);
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      throw new InternalServerErrorException("Error al emitir el certificado");
     } finally {
       await queryRunner.release();
     }
@@ -708,13 +719,13 @@ export class CertificadosService {
     if (search) {
       const term = `%${search}%`;
       qb.andWhere(
-        `
+        `(
           lower(unaccent(propietario.nombre))    LIKE lower(unaccent(:term))
           OR lower(unaccent(propietario.apellido))  LIKE lower(unaccent(:term))
           OR lower(unaccent(badge.nombre))         LIKE lower(unaccent(:term))
           OR certificado.estado::varchar           ILIKE :term
           OR to_char(certificado.fecha_emision, 'YYYY-MM-DD') ILIKE :term
-        `,
+         )`,
         { term },
       );
     }
@@ -755,13 +766,13 @@ export class CertificadosService {
 
     if (search) {
       qb.andWhere(
-        `
+        `(
           lower(unaccent(propietario.nombre))    LIKE lower(unaccent(:term))
           OR lower(unaccent(propietario.apellido))  LIKE lower(unaccent(:term))
           OR lower(unaccent(badge.nombre))         LIKE lower(unaccent(:term))
           OR certificado.estado::varchar           ILIKE :term
           OR to_char(certificado.fecha_emision,'YYYY-MM-DD') ILIKE :term
-        `,
+         )`,
         { term },
       );
     }

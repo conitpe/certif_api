@@ -52,64 +52,69 @@ export class UsuariosService {
     return this.usuariosRepository.find();
   }
 
- // usuarios.service.ts
+  // usuarios.service.ts
 
-async findUsuariosVinculados(
-  organizacionId: string,
-  pageStr  = "1",
-  limitStr = "20",
-  search   = "",
-): Promise<{ items: Usuario[]; total: number }> {
-  const page  = parseInt(pageStr,  10) || 1;
-  const limit = parseInt(limitStr, 10) || 20;
-  const term  = `%${search}%`;
+  async findUsuariosVinculados(
+    organizacionId: string,
+    pageStr = "1",
+    limitStr = "20",
+    search = "",
+  ): Promise<{ items: Usuario[]; total: number }> {
+    const page = parseInt(pageStr, 10) || 1;
+    const limit = parseInt(limitStr, 10) || 20;
+    const term = `%${search}%`;
 
-  const qb = this.usuariosRepository
-    .createQueryBuilder("usuario")
-    .select([
-      "usuario.id",
-      "usuario.nombre",
-      "usuario.apellido",
-      "usuario.email",
-      "usuario.creado_en",  
-      "usuario.rol",  
-    ])
-    .innerJoin("usuario.organizaciones", "org")
-    .where("org.id = :organizacionId", { organizacionId });
+    const qb = this.usuariosRepository
+      .createQueryBuilder("usuario")
+      .select([
+        "usuario.id",
+        "usuario.nombre",
+        "usuario.apellido",
+        "usuario.email",
+        "usuario.creado_en",
+        "usuario.rol",
+      ])
+      .innerJoin("usuario.organizaciones", "org")
+      .where("org.id = :organizacionId", { organizacionId });
 
-  if (search) {
-    qb.andWhere(
-      `
-        lower(unaccent(usuario.nombre))    LIKE lower(unaccent(:term))
-        OR lower(unaccent(usuario.apellido)) LIKE lower(unaccent(:term))
-        OR lower(unaccent(usuario.email))    LIKE lower(unaccent(:term))
-      `,
-      { term },
-    );
+    if (search) {
+      qb.andWhere(
+        `(
+          lower(unaccent(usuario.nombre)) LIKE lower(unaccent(:term))
+          OR lower(unaccent(usuario.apellido)) LIKE lower(unaccent(:term))
+          OR lower(unaccent(usuario.email)) LIKE lower(unaccent(:term))
+        )`,
+        { term },
+      );
+    }
+
+    qb.orderBy("usuario.creado_en", "DESC")
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [items, total] = await qb.getManyAndCount();
+    return { items, total };
   }
-
-  qb.orderBy("usuario.creado_en", "DESC")
-    .skip((page - 1) * limit)
-    .take(limit);
-
-  const [items, total] = await qb.getManyAndCount();
-  return { items, total };
-}
 
   async listarBeneficiarios(
     rol: string,
-    pageStr  = '1',
-    limitStr = '20',
-    search   = '',
+    pageStr = "1",
+    limitStr = "20",
+    search = "",
   ): Promise<{ items: Usuario[]; total: number }> {
-    const page  = parseInt(pageStr, 10)  || 1;
+    const page = parseInt(pageStr, 10) || 1;
     const limit = parseInt(limitStr, 10) || 20;
-    const term  = `%${search}%`;
+    const term = `%${search}%`;
 
     const qb = this.usuariosRepository
-      .createQueryBuilder('usuario')
-      .select(['usuario.id','usuario.nombre','usuario.apellido','usuario.email'])
-      .where('usuario.rol = :rol', { rol });
+      .createQueryBuilder("usuario")
+      .select([
+        "usuario.id",
+        "usuario.nombre",
+        "usuario.apellido",
+        "usuario.email",
+      ])
+      .where("usuario.rol = :rol", { rol });
 
     if (search) {
       qb.andWhere(
@@ -122,7 +127,7 @@ async findUsuariosVinculados(
       );
     }
 
-    qb.orderBy('usuario.creado_en','DESC')
+    qb.orderBy("usuario.creado_en", "DESC")
       .skip((page - 1) * limit)
       .take(limit);
 
@@ -135,34 +140,40 @@ async findUsuariosVinculados(
    */
   async listarBeneficiariosConCertificados(
     organizacionId: string,
-    pageStr  = '1',
-    limitStr = '20',
-    search   = '',
+    pageStr = "1",
+    limitStr = "20",
+    search = "",
   ): Promise<{ items: Usuario[]; total: number }> {
-    const page  = parseInt(pageStr, 10)  || 1;
+    const page = parseInt(pageStr, 10) || 1;
     const limit = parseInt(limitStr, 10) || 20;
-    const term  = `%${search}%`;
+    const term = `%${search}%`;
 
     const qb = this.usuariosRepository
-      .createQueryBuilder('usuario')
-      .select(['usuario.id','usuario.nombre','usuario.apellido','usuario.email'])
-      .leftJoin('usuario.certificados','certificado')
-      .leftJoin('certificado.badge','badge')
-      .where('usuario.rol = :rol',{ rol:'beneficiario' })
-      .andWhere('badge.issuer_id = :orgId',{ orgId:organizacionId });
+      .createQueryBuilder("usuario")
+      .select([
+        "usuario.id",
+        "usuario.nombre",
+        "usuario.apellido",
+        "usuario.email",
+        'usuario.creado_en'
+      ])
+      .leftJoin("usuario.certificados", "certificado")
+      .leftJoin("certificado.badge", "badge")
+      .where("usuario.rol = :rol", { rol: "beneficiario" })
+      .andWhere("badge.issuer_id = :orgId", { orgId: organizacionId });
 
     if (search) {
       qb.andWhere(
-        `
+        `(
           lower(unaccent(usuario.nombre))     LIKE lower(unaccent(:term))
           OR lower(unaccent(usuario.apellido))  LIKE lower(unaccent(:term))
           OR lower(unaccent(usuario.email))     LIKE lower(unaccent(:term))
-        `,
+        )`,
         { term },
       );
     }
 
-    qb.orderBy('usuario.creado_en','DESC')
+    qb.orderBy("usuario.creado_en", "DESC")
       .skip((page - 1) * limit)
       .take(limit);
 
@@ -179,20 +190,20 @@ async findUsuariosVinculados(
     try {
       this.logger.log(`Creando usuario: ${usuarioData.email}`);
 
-    const emailNorm = usuarioData.email?.trim().toLowerCase();
-    if (!emailNorm) {
-      throw new BadRequestException(`El email es obligatorio.`);
-    }
-    const existente = await queryRunner.manager.findOne(Usuario, {
-      where: { email: emailNorm },
-    });
-    if (existente) {
-      throw new BadRequestException(
-        `El correo "${emailNorm}" ya está registrado.`,
-      );
-    }
+      const emailNorm = usuarioData.email?.trim().toLowerCase();
+      if (!emailNorm) {
+        throw new BadRequestException(`El email es obligatorio.`);
+      }
+      const existente = await queryRunner.manager.findOne(Usuario, {
+        where: { email: emailNorm },
+      });
+      if (existente) {
+        throw new BadRequestException(
+          `El correo "${emailNorm}" ya está registrado.`,
+        );
+      }
 
-    this.logger.log(`Creando usuario: ${emailNorm}`);
+      this.logger.log(`Creando usuario: ${emailNorm}`);
 
       if (usuarioData.contrasena) {
         const salt = await bcrypt.genSalt();
@@ -365,7 +376,7 @@ async findUsuariosVinculados(
   ): Promise<void> {
     await this.dataSource
       .createQueryBuilder()
-      .relation(Usuario, 'organizaciones')     // nombre de la propiedad ManyToMany en Usuario
+      .relation(Usuario, "organizaciones") // nombre de la propiedad ManyToMany en Usuario
       .of(usuarioId)
       .add(organizacionId);
   }
